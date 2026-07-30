@@ -1,0 +1,36 @@
+{
+  "name": "opencode-session-identity",
+  "version": "1.0.0",
+  "description": "opencode plugin that exposes the current session id to the agent via shell env and system prompt",
+  "type": "module",
+  "main": "./session-identity.js",
+  "exports": {
+    ".": "./session-identity.js"
+  },
+  "files": [
+    "session-identity.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "plugin",
+    "session",
+    "audit",
+    "observability"
+  ],
+  "author": "Henrique Van Klaveren",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/klaveren/opencode-session-identity.git"
+  },
+  "bugs": {
+    "url": "https://github.com/klaveren/opencode-session-identity/issues"
+  },
+  "homepage": "https://github.com/klaveren/opencode-session-identity#readme",
+  "engines": {
+    "node": ">=18"
+  }
+}
