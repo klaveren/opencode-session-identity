@@ -157,7 +157,7 @@ terminal, for instance — simply do not carry one, and the plugin no-ops rather
 The prompt line is deliberately short and constant. It sits in the system prompt, which is the very
 front of the cached prefix, so it is re-read on **every** turn of the session — a long line here is
 paid hundreds of times over. (For the full arithmetic on why position in the prefix matters, see
-`cache-ttl`.)
+[`cache-ttl`](https://github.com/klaveren/opencode-cache-ttl).)
 
 ---
 
