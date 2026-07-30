@@ -1,9 +1,30 @@
-# session-identity
+# opencode-session-identity
 
-> An opencode plugin that tells an agent its own session id (`ses_…`) — through the shell
-> environment and the system prompt.
+### Ask your agent which session it is running in. It has no idea. Neither does `ps`.
 
-**~80 lines. Zero dependencies. Pure JS.**
+> An opencode plugin that tells an agent its own session id (`ses_…`) — through **both** the shell
+> environment and the system prompt, so it can cross-check one against the other.
+> **~80 lines. Zero dependencies. Pure JS.**
+
+This sounds like a triviality until you try to write an audit trail, attribute cost per session, or
+have an agent report where it did its work. Then it is the one fact the runtime withholds.
+
+---
+
+## Is this your problem?
+
+- You want an **audit log** that records which session performed an action, and you have nowhere to
+  read the id from
+- You are trying to **attribute token cost per session** and cannot correlate your own records with
+  `GET /session/:id/message`
+- You asked an agent for its session id and it **guessed, hallucinated, or said it could not know**
+- You tried scraping it from `ps`, the opencode logs, or `opencode.db` — and it broke the moment two
+  agents ran at once
+- You went looking for `OPENCODE_SESSION_ID` and found only `OPENCODE` and `OPENCODE_PID`
+
+> **The short version:** opencode does not expose the session id to the agent. This plugin adds it on
+> two independent channels — an environment variable for shell commands, and a line in the system
+> prompt — so the agent can both *read* it and *verify* it.
 
 ---
 
@@ -167,6 +188,24 @@ printenv OPENCODE_SESSION_ID
 If the shell channel returns nothing, check that the plugin is registered and that the command
 really runs through opencode's shell tool. If the prompt channel is silent but the shell one works,
 the experimental hook likely changed upstream.
+
+---
+
+## What this unlocks: measuring what a session actually costs
+
+Knowing the session id is the prerequisite for reading
+`GET /session/:id/message` → `info.tokens.cache` and finding out where the money in an agent session
+really goes. Doing exactly that produced two sibling plugins:
+
+- **[opencode-cache-ttl](https://github.com/klaveren/opencode-cache-ttl)** — Anthropic's prompt cache
+  expires after 5 minutes; this raises it to an hour. Measured **92% cheaper** on a 15-minute gap.
+  The config route for this does not work, in two different ways, both documented there.
+- **[opencode-session-keepalive](https://github.com/klaveren/opencode-session-keepalive)** — keeps an
+  idle session's cache warm with minimal pings, and disarms once pinging stops being cheaper than
+  re-warming.
+
+The finding that started it: in a long agent session, **~65% of the read cost is the initial context
+being re-read on every single turn.**
 
 ---
 
