@@ -30,6 +30,9 @@
     "url": "https://github.com/klaveren/opencode-session-identity/issues"
   },
   "homepage": "https://github.com/klaveren/opencode-session-identity#readme",
+  "scripts": {
+    "test": "node --test"
+  },
   "engines": {
     "node": ">=18"
   }
