@@ -1,6 +1,6 @@
 {
   "name": "opencode-session-identity",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "opencode plugin that exposes the current session id to the agent via shell env and system prompt",
   "type": "module",
   "main": "./session-identity.js",
