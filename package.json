@@ -1,20 +1,21 @@
 {
   "name": "opencode-session-identity",
-  "version": "1.0.2",
-  "description": "opencode plugin that exposes the current session id to the agent via shell env and system prompt",
+  "version": "2.0.0",
+  "description": "opencode v2 plugin that exposes the current session id to the agent via the system prompt (shell env is native in v2)",
   "type": "module",
-  "main": "./session-identity.js",
+  "main": "./index.js",
   "exports": {
-    ".": "./session-identity.js"
+    ".": "./index.js"
   },
   "files": [
-    "session-identity.js",
+    "index.js",
     "README.md",
     "LICENSE"
   ],
   "keywords": [
     "opencode",
     "opencode-plugin",
+    "opencode-v2",
     "plugin",
     "session",
     "audit",
@@ -33,6 +34,12 @@
   "scripts": {
     "test": "node --test",
     "release": "npm version patch && git push --follow-tags"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "^2.2.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "^2.2.0"
   },
   "engines": {
     "node": ">=18"
