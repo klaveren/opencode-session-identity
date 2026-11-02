@@ -1,13 +1,17 @@
 # opencode-session-identity
 
-### Ask your agent which session it is running in. It has no idea. Neither does `ps`.
+### Ask your agent which session it is running in. It knows from its context, and can verify it in the environment.
 
-> An opencode plugin that tells an agent its own session id (`ses_…`) — through **both** the shell
-> environment and the system prompt, so it can cross-check one against the other.
-> **~80 lines. Zero dependencies. Pure JS.**
+> An opencode **v2** plugin that tells an agent its own session id (`ses_…`) through the system
+> prompt, while v2 itself provides `OPENCODE_SESSION_ID` in every shell. The agent can cross-check
+> one against the other.
+> **~60 lines. Zero runtime dependencies. Pure JS.**
 
-This sounds like a triviality until you try to write an audit trail, attribute cost per session, or
-have an agent report where it did its work. Then it is the one fact the runtime withholds.
+**v2 (2026-11):** OpenCode v2 rewrote the plugin API — v1 plugin code does not load. This release is
+ported: `Plugin.define` + `setup(ctx)`, prompt channel on `ctx.session.hook("context")`. The shell
+channel was **dropped because v2 does it natively** — the shell tool now injects
+`OPENCODE_SESSION_ID` (alongside `AGENT`, `OPENCODE`, `AI_AGENT`) into every spawned shell, verified
+on v2.2.5. For the v1 plugin, use the `v1-plugin-api` branch / `opencode-session-identity@1`.
 
 ---
 
@@ -20,32 +24,10 @@ have an agent report where it did its work. Then it is the one fact the runtime 
 - You asked an agent for its session id and it **guessed, hallucinated, or said it could not know**
 - You tried scraping it from `ps`, the opencode logs, or `opencode.db` — and it broke the moment two
   agents ran at once
-- You went looking for `OPENCODE_SESSION_ID` and found only `OPENCODE` and `OPENCODE_PID`
 
-> **The short version:** opencode does not expose the session id to the agent. This plugin adds it on
-> two independent channels — an environment variable for shell commands, and a line in the system
-> prompt — so the agent can both *read* it and *verify* it.
-
----
-
-## TL;DR
-
-opencode does not tell an agent which session it is running in. The runtime environment carries
-only `OPENCODE` and `OPENCODE_PID` — there is no `OPENCODE_SESSION_ID`.
-
-This plugin fills that gap on two channels — which also lets an agent **verify one against the
-other** before writing an audit record:
-
-```bash
-# 1. shell channel — reactive, the agent asks
-$ printenv OPENCODE_SESSION_ID
-ses_a1b2c3d4e5f6g7h8i9j0k1l2m3
-```
-
-```
-# 2. prompt channel — proactive, the agent is born knowing
-Session identity (opencode): your current sessionID is ses_a1b2c3d4e5f6g7h8i9j0k1l2m3.
-```
+> **The short version:** the shell env var is native in v2, but the agent still is not *told* which
+> session it is. This plugin adds the proactive half — a line in the system prompt — so the agent can
+> both *know* its session id and *verify* it against the live environment.
 
 ---
 
@@ -58,21 +40,24 @@ session — all of them key on the session id.
 opencode knows that id. The agent doesn't. Without it you end up correlating by timestamp or
 parsing `ps` output, both of which break the moment two agents run concurrently.
 
-## Why Two Channels
+## Two Halves — One Plugin, One Native
 
 They fail differently, and the redundancy is deliberate:
 
-| Channel | Hook | Stability | Cost | Behaviour |
+| Half | Source | Stability | Cost | Behaviour |
 | --- | --- | --- | --- | --- |
-| **Shell** | `shell.env` | stable | zero | Only present when a shell actually runs |
-| **Prompt** | `experimental.chat.system.transform` | **experimental** | ~15 tokens/turn | Always in context, no action needed |
+| **Shell** | opencode v2 native (shell tool env) | stable | zero | Only present when a shell actually runs |
+| **Prompt** | `ctx.session.hook("context")` | stable domain hook in v2 | ~15 tokens/turn | Always in context, no action needed |
 
-The prompt channel is the convenient one — the agent never has to think about it. But it rides an
-**experimental** hook that may change shape or disappear in an opencode release. The shell channel
-is boring and durable.
+The prompt half is the convenient one — the agent never has to think about it. In v2 the hook is a
+first-class session domain hook (v1's *experimental* `chat.system.transform` is removed), and it is
+still wrapped in its own `try/catch`, so a shape change upstream degrades to "shell only" instead of
+taking the plugin — or a turn — down.
 
-Each is independently toggleable, and the experimental one is wrapped in its own `try/catch`, so a
-breaking change upstream degrades this plugin to "shell only" instead of taking it down.
+The shell half went native: v2's shell tool sets `OPENCODE_SESSION_ID` on the `shell.create.before`
+env before spawning, so a plugin cannot and need not duplicate it. (The v2 hook event no longer
+carries `sessionID` at all — `{ command, cwd, timeout, shell, env }` only — so even a custom
+`envVar` is impossible from a plugin now.)
 
 > This plugin merges what used to be two separate files (`session-env.js` and `session-prompt.js`),
 > which were kept apart precisely for that isolation. Per-channel toggles plus the internal guard
@@ -112,26 +97,26 @@ npm install opencode-session-identity
 ```
 
 ```jsonc
-// opencode.json
-{ "plugin": ["opencode-session-identity"] }
+// opencode.json (v2 key: "plugins")
+{ "plugins": ["opencode-session-identity"] }
 ```
 
-Or vendor the single file into your project and register it by path. Restart the opencode server
-afterwards — config is cached.
+Or vendor the single file into `.opencode/plugins/`. Restart the opencode server afterwards — config
+is cached.
 
 ---
 
 ## Configuration
 
-A bare string works and uses the defaults. Use the tuple form to pass options:
+A bare string works and uses the defaults. Use the object form to pass options:
 
 ```jsonc
 {
-  "plugin": [
-    ["./.opencode/custom/plugin/session-identity/session-identity.js", {
-      "shell": true,
-      "prompt": true
-    }]
+  "plugins": [
+    {
+      "package": "./plugin/session-identity",
+      "options": { "prompt": true }
+    }
   ]
 }
 ```
@@ -139,20 +124,18 @@ A bare string works and uses the defaults. Use the tuple form to pass options:
 | Option | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `enabled` | `boolean` | `true` | Master switch. When `false`, no hooks are registered. |
-| `shell` | `boolean` | `true` | Expose the id as an env var in every shell invocation. |
-| `prompt` | `boolean` | `true` | Append the id to the system prompt. Uses an **experimental** hook. |
-| `envVar` | `string` | `"OPENCODE_SESSION_ID"` | Environment variable name for the shell channel. |
+| `prompt` | `boolean` | `true` | Append the id to the system prompt on every agent model request. |
 
 **Turn `prompt` off** if you are optimising the cached prefix down to the token and can afford to
-have agents run `printenv` on demand. **Turn `shell` off** if your agents never touch a shell.
+have agents run `printenv OPENCODE_SESSION_ID` on demand.
 
 ---
 
 ## Internals
 
-Both hooks guard on `sessionID` being present. Shells outside a session context — a plain user
-terminal, for instance — simply do not carry one, and the plugin no-ops rather than injecting an
-`undefined`.
+The hook guards on `sessionID` being present and on `event.system` being an array — a v2
+`SystemPart` is `{ type: "text", text }`, not a bare string as in v1. Requests outside a session
+context simply do not carry one, and the plugin no-ops rather than injecting an `undefined`.
 
 The prompt line is deliberately short and constant. It sits in the system prompt, which is the very
 front of the cached prefix, so it is re-read on **every** turn of the session — a long line here is
@@ -165,29 +148,27 @@ paid hundreds of times over. (For the full arithmetic on why position in the pre
 
 - **The prompt channel costs tokens.** ~15 per turn, at the front of the prefix. Negligible on its
   own, but it is the kind of thing that adds up across a large agent fleet. Turning it off also
-  costs you the cross-check described above — the shell channel alone has nothing to compare with.
-- **Experimental hook.** `experimental.chat.system.transform` is not part of opencode's stable API.
-  If it disappears, the returned hook key is simply never called — no crash, just silence. Watch
-  for the prompt line vanishing and fall back to the shell channel.
-- **Registration.** Lives outside `.opencode/plugins/`. Files in `{plugin,plugins}/` are
-  auto-discovered as bare strings **without options** — and since auto-discovery merges after
-  config files with last-one-wins dedup, a file in both places has its options silently dropped.
+  costs you the cross-check described above — with prompt off there is nothing to compare the
+  environment against.
+- **v1 does not load in v2.** The v1 object entrypoint and `shell.env` /
+  `experimental.chat.system.transform` hook keys are gone. Pin `opencode-session-identity@1` on
+  opencode 1.x; this 2.0 requires opencode v2 and `@opencode/plugin` ^2.2.
 
 ---
 
 ## Verification
 
 ```bash
-# shell channel — from inside an agent's shell tool
+# shell half — native since v2, from inside an agent's shell tool
 printenv OPENCODE_SESSION_ID
 
-# prompt channel — just ask the agent
+# prompt half — just ask the agent
 "what is your sessionID?"
 ```
 
-If the shell channel returns nothing, check that the plugin is registered and that the command
-really runs through opencode's shell tool. If the prompt channel is silent but the shell one works,
-the experimental hook likely changed upstream.
+If `printenv` returns nothing, the opencode version predates the native injection (or the command
+does not run through opencode's shell tool). If the agent does not know its id, check that this
+plugin appears in `opencode plugin list` / `/plugins`.
 
 ---
 
